@@ -82,8 +82,8 @@ export default function CheckoutPage() {
 
       const createdDbOrder = resData.order;
 
-      if (resData.error) {
-        showToast(`API Key Note: ${resData.error}`, 'info');
+      if (resData.dbError) {
+        console.warn('DB save warning:', resData.dbError);
       }
 
       const finalOrder: Order = {
@@ -105,10 +105,15 @@ export default function CheckoutPage() {
 
       setCompletedOrder(finalOrder);
       clearCart();
-      showToast(`Bill #${finalOrder.id} generated for ${customerName}!`, 'success');
+
+      if (resData.dbSaved) {
+        showToast(`Bill #${finalOrder.id} saved in Supabase database for ${customerName}!`, 'success');
+      } else {
+        showToast(`Bill #${finalOrder.id} generated for ${customerName}! (DB: ${resData.dbError || 'offline mode'})`, 'info');
+      }
     } catch (err: any) {
       console.error('Order creation error:', err);
-      showToast(`Notice: ${err.message || 'Bill generated'}`, 'info');
+      showToast(`Error: ${err.message || 'Failed to create order'}`, 'error');
     } finally {
       setIsProcessing(false);
     }
