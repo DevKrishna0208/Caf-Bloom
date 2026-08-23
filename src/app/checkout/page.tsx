@@ -8,7 +8,6 @@ import { CheckCircle2, CreditCard, ShieldCheck, Clock, ArrowRight, Lock, Printer
 import { useCart } from '@/context/CartProvider';
 import { useAuth } from '@/context/AuthProvider';
 import { paymentProvider } from '@/lib/payment/service';
-import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 import { useToast } from '@/context/ToastProvider';
 import { Order } from '@/types/database';
 import { InvoiceBillModal } from '@/components/orders/InvoiceBillModal';
@@ -18,8 +17,6 @@ export default function CheckoutPage() {
   const { items, subtotal, tax, discount, total, clearCart } = useCart();
   const { user, profile } = useAuth();
   const { showToast } = useToast();
-  const supabase = createClient();
-  const configured = isSupabaseConfigured();
 
   const [customerName, setCustomerName] = useState(profile?.full_name || '');
   const [customerPhone, setCustomerPhone] = useState(profile?.phone || '');
@@ -52,87 +49,66 @@ export default function CheckoutPage() {
     setIsProcessing(true);
 
     try {
-      const orderNum = 'CB-' + Math.floor(10000 + Math.random() * 90000);
+      const phoneToSave = customerPhone.trim() || '+91 98765 43210';
       const calculatedPrep = Math.floor(15 + Math.random() * 15) + ' mins';
       setPrepTime(calculatedPrep);
 
-      const paySession = await paymentProvider.createCheckoutSession(orderNum, total, customerName);
+      const itemsPayload = items.map((item) => ({
+        product_name: item.product.name,
+        quantity: item.quantity,
+        unit_price: item.variant ? item.variant.price : item.product.price,
+        total_price: (item.variant ? item.variant.price : item.product.price) * item.quantity,
+        variant_name: item.variant?.name ?? undefined,
+      }));
 
-      const orderItemsMapped = items.map((item) => {
-        const price = item.variant ? item.variant.price : item.product.price;
-        return {
-          product_id: item.product.id,
-          product_name: item.product.name,
-          quantity: item.quantity,
-          unit_price: price,
-          total_price: price * item.quantity,
-          variant_name: item.variant?.name ?? undefined,
-        };
+      // Call server-side API route to insert into Supabase reliably
+      const response = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer_name: customerName,
+          customer_phone: phoneToSave,
+          items: itemsPayload,
+          subtotal,
+          tax,
+          discount,
+          total,
+          notes,
+          payment_method: 'Online Payment (UPI/Card)',
+        }),
       });
 
-      const phoneToSave = customerPhone.trim() || '+91 98765 43210';
+      const resData = await response.json();
 
-      const orderObject: Order = {
-        id: orderNum,
+      if (!response.ok || resData.error) {
+        throw new Error(resData.error || 'Database insert failed');
+      }
+
+      const createdDbOrder = resData.order;
+
+      const finalOrder: Order = {
+        id: createdDbOrder?.id || 'CB-' + Math.floor(10000 + Math.random() * 90000),
         user_id: user?.id,
-        status: 'confirmed',
-        subtotal,
-        tax,
-        discount,
-        total,
+        status: createdDbOrder?.status || 'confirmed',
+        subtotal: createdDbOrder?.subtotal || subtotal,
+        tax: createdDbOrder?.tax || tax,
+        discount: createdDbOrder?.discount || discount,
+        total: createdDbOrder?.total || total,
         payment_status: 'paid',
-        payment_method: paySession.paymentMethod,
+        payment_method: 'Online Payment (UPI/Card)',
         customer_name: customerName,
         customer_phone: phoneToSave,
         notes: notes || undefined,
-        created_at: new Date().toISOString(),
-        items: orderItemsMapped,
+        created_at: createdDbOrder?.created_at || new Date().toISOString(),
+        items: itemsPayload,
       };
 
-      if (configured) {
-        const { data: orderData, error: orderError } = await supabase
-          .from('orders')
-          .insert({
-            user_id: user?.id ?? null,
-            status: 'confirmed',
-            subtotal,
-            tax,
-            discount,
-            total,
-            payment_status: 'paid',
-            payment_method: paySession.paymentMethod,
-            customer_name: customerName,
-            customer_phone: phoneToSave,
-            notes: notes || null,
-          })
-          .select()
-          .single();
-
-        if (!orderError && orderData) {
-          orderObject.id = orderData.id;
-          const orderItemsToInsert = items.map((item) => {
-            const price = item.variant ? item.variant.price : item.product.price;
-            return {
-              order_id: orderData.id,
-              product_id: item.product.id,
-              product_name: item.product.name,
-              quantity: item.quantity,
-              unit_price: price,
-              total_price: price * item.quantity,
-              variant_name: item.variant?.name ?? null,
-            };
-          });
-
-          await supabase.from('order_items').insert(orderItemsToInsert);
-        }
-      }
-
-      setCompletedOrder(orderObject);
+      setCompletedOrder(finalOrder);
       clearCart();
-      showToast(`Bill #${orderObject.id} generated for ${customerName} & saved in Database!`, 'success');
-    } catch (err) {
-      console.error('Order creation error', err);
-      showToast('Failed to generate bill. Please try again.', 'error');
+      showToast(`Bill #${finalOrder.id} saved in Supabase database!`, 'success');
+    } catch (err: any) {
+      console.error('Order creation error:', err);
+      showToast(`Database error: ${err.message || 'Failed to save order'}`, 'error');
     } finally {
       setIsProcessing(false);
     }
@@ -150,9 +126,9 @@ export default function CheckoutPage() {
         </motion.div>
 
         <div className="space-y-2">
-          <span className="text-xs font-mono uppercase tracking-widest text-amber-400">Bill Saved in Database</span>
+          <span className="text-xs font-mono uppercase tracking-widest text-amber-400">Saved in Supabase Database</span>
           <h1 className="text-3xl font-extrabold text-white">Bill #{completedOrder.id}</h1>
-          <p className="text-lg font-semibold text-amber-300">Generated for: {completedOrder.customer_name}</p>
+          <p className="text-lg font-semibold text-amber-300">Customer Name: {completedOrder.customer_name}</p>
         </div>
 
         <div className="p-6 rounded-3xl bg-zinc-900/80 border border-zinc-800 space-y-4 text-sm max-w-md mx-auto shadow-xl">
@@ -183,7 +159,7 @@ export default function CheckoutPage() {
             href="/orders"
             className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-200 font-bold text-sm hover:bg-zinc-800"
           >
-            View Database Order History
+            View Live Database Orders
           </Link>
           <Link
             href="/menu"
@@ -205,8 +181,8 @@ export default function CheckoutPage() {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 space-y-10">
       <div>
-        <h1 className="text-3xl font-extrabold text-white">Generate Bill</h1>
-        <p className="text-xs text-zinc-400 mt-1">Enter customer name to generate & save bill in Supabase database</p>
+        <h1 className="text-3xl font-extrabold text-white">Generate & Save Bill</h1>
+        <p className="text-xs text-zinc-400 mt-1">Enter customer name to save bill to Supabase database</p>
       </div>
 
       <form onSubmit={handlePlaceOrder} className="grid grid-cols-1 lg:grid-cols-3 gap-10">
@@ -310,7 +286,7 @@ export default function CheckoutPage() {
             disabled={isProcessing}
             className="w-full py-4 rounded-2xl gold-gradient-bg text-zinc-950 font-bold text-sm hover:brightness-110 shadow-xl shadow-amber-500/20 flex items-center justify-center gap-2"
           >
-            {isProcessing ? 'Saving to Database...' : 'Generate & Save Bill'}
+            {isProcessing ? 'Saving to Supabase Database...' : 'Generate & Save Bill'}
           </button>
         </div>
       </form>
