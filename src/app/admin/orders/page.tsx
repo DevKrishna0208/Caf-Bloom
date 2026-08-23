@@ -1,9 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { ShoppingBag, Search, Calendar, FileText, Filter, ArrowUpDown } from 'lucide-react';
+import { ShoppingBag, Search, Calendar, FileText, Filter, ArrowUpDown, RefreshCw } from 'lucide-react';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
-import { MOCK_INITIAL_ORDERS } from '@/lib/mockData';
 import { Order, OrderStatus } from '@/types/database';
 import { useToast } from '@/context/ToastProvider';
 import { InvoiceBillModal } from '@/components/orders/InvoiceBillModal';
@@ -20,7 +19,7 @@ export default function AdminOrdersPage() {
   const supabase = createClient();
   const configured = isSupabaseConfigured();
 
-  // Fetch orders from Supabase database
+  // Fetch orders directly from Supabase database
   const fetchDatabaseOrders = async () => {
     setLoading(true);
     if (configured) {
@@ -33,7 +32,7 @@ export default function AdminOrdersPage() {
           `)
           .order('created_at', { ascending: false });
 
-        if (!error && dbOrders && dbOrders.length > 0) {
+        if (!error && dbOrders) {
           setOrders(dbOrders as Order[]);
           setLoading(false);
           return;
@@ -42,14 +41,24 @@ export default function AdminOrdersPage() {
         console.error('Error fetching database orders:', e);
       }
     }
-
-    // Fallback seed orders
-    setOrders(MOCK_INITIAL_ORDERS);
     setLoading(false);
   };
 
   useEffect(() => {
     fetchDatabaseOrders();
+
+    if (configured) {
+      const channel = supabase
+        .channel('admin:realtime:orders')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+          fetchDatabaseOrders();
+        })
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
   }, []);
 
   const handleStatusChange = async (id: string, newStatus: OrderStatus) => {
@@ -65,7 +74,7 @@ export default function AdminOrdersPage() {
       }
     }
 
-    showToast(`Order #${id} status updated to ${newStatus}`, 'success');
+    showToast(`Order #${id.substring(0, 8)} status updated to ${newStatus}`, 'success');
   };
 
   // Filter and arrange bills by Date, Customer Name, or ID
@@ -107,11 +116,19 @@ export default function AdminOrdersPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-extrabold text-white">Database Bills & Live Orders</h1>
-        <p className="text-xs text-zinc-400 mt-1">
-          Arranged customer bills from Supabase database sorted by date, name & order status
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-extrabold text-white">Database Bills & Live Orders</h1>
+          <p className="text-xs text-zinc-400 mt-1">
+            Real-time customer bills fetched directly from Supabase database (`orders` table)
+          </p>
+        </div>
+        <button
+          onClick={fetchDatabaseOrders}
+          className="px-4 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-amber-400 hover:text-white text-xs font-semibold flex items-center gap-2 w-fit"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh DB
+        </button>
       </div>
 
       {/* Filter and Arrangement Controls Bar */}
@@ -182,16 +199,22 @@ export default function AdminOrdersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800/60">
-              {arrangedOrders.length === 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan={9} className="py-8 text-center text-amber-400">
+                    Loading database orders from Supabase...
+                  </td>
+                </tr>
+              ) : arrangedOrders.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="py-8 text-center text-zinc-500">
-                    No database bills match your search criteria.
+                    No database orders found matching search criteria.
                   </td>
                 </tr>
               ) : (
                 arrangedOrders.map((order) => (
                   <tr key={order.id} className="hover:bg-zinc-950/50 transition-colors">
-                    <td className="py-4 px-4 font-extrabold text-amber-400">#{order.id}</td>
+                    <td className="py-4 px-4 font-extrabold text-amber-400">#{order.id.substring(0, 8)}</td>
                     <td className="py-4 px-4 font-bold text-white text-sm">{order.customer_name}</td>
                     <td className="py-4 px-4 text-amber-300 font-mono">{order.customer_phone}</td>
                     <td className="py-4 px-4 text-zinc-400">
