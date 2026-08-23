@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { CheckCircle2, CreditCard, ShieldCheck, Clock, ArrowRight, Lock, Printer, FileText } from 'lucide-react';
+import { CheckCircle2, CreditCard, ShieldCheck, Clock, ArrowRight, Lock, Printer, FileText, User } from 'lucide-react';
 import { useCart } from '@/context/CartProvider';
 import { useAuth } from '@/context/AuthProvider';
 import { paymentProvider } from '@/lib/payment/service';
@@ -34,7 +34,7 @@ export default function CheckoutPage() {
     return (
       <div className="max-w-xl mx-auto px-4 py-20 text-center space-y-4">
         <h2 className="text-2xl font-bold text-white">Your cart is empty</h2>
-        <p className="text-xs text-zinc-400">Please add items to your cart before checking out.</p>
+        <p className="text-xs text-zinc-400">Please add items to your cart before generating a bill.</p>
         <Link href="/menu" className="inline-block px-6 py-2.5 rounded-xl gold-gradient-bg text-zinc-950 font-bold text-sm">
           Return to Menu
         </Link>
@@ -44,8 +44,8 @@ export default function CheckoutPage() {
 
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!customerName || !customerPhone) {
-      showToast('Please enter your full name and phone number', 'error');
+    if (!customerName.trim()) {
+      showToast('Please enter customer name to generate bill', 'error');
       return;
     }
 
@@ -70,6 +70,8 @@ export default function CheckoutPage() {
         };
       });
 
+      const phoneToSave = customerPhone.trim() || '+91 98765 43210';
+
       const orderObject: Order = {
         id: orderNum,
         user_id: user?.id,
@@ -81,7 +83,7 @@ export default function CheckoutPage() {
         payment_status: 'paid',
         payment_method: paySession.paymentMethod,
         customer_name: customerName,
-        customer_phone: customerPhone,
+        customer_phone: phoneToSave,
         notes: notes || undefined,
         created_at: new Date().toISOString(),
         items: orderItemsMapped,
@@ -100,7 +102,7 @@ export default function CheckoutPage() {
             payment_status: 'paid',
             payment_method: paySession.paymentMethod,
             customer_name: customerName,
-            customer_phone: customerPhone,
+            customer_phone: phoneToSave,
             notes: notes || null,
           })
           .select()
@@ -127,10 +129,10 @@ export default function CheckoutPage() {
 
       setCompletedOrder(orderObject);
       clearCart();
-      showToast(`Order #${orderObject.id} received & invoice bill generated!`, 'success');
+      showToast(`Bill #${orderObject.id} generated for ${customerName} & saved in Database!`, 'success');
     } catch (err) {
       console.error('Order creation error', err);
-      showToast('Failed to create order. Please try again.', 'error');
+      showToast('Failed to generate bill. Please try again.', 'error');
     } finally {
       setIsProcessing(false);
     }
@@ -148,9 +150,9 @@ export default function CheckoutPage() {
         </motion.div>
 
         <div className="space-y-2">
-          <span className="text-xs font-mono uppercase tracking-widest text-amber-400">Order Confirmed</span>
-          <h1 className="text-3xl font-extrabold text-white">Order #{completedOrder.id}</h1>
-          <p className="text-lg font-semibold text-amber-300">Your order has been saved in the database!</p>
+          <span className="text-xs font-mono uppercase tracking-widest text-amber-400">Bill Saved in Database</span>
+          <h1 className="text-3xl font-extrabold text-white">Bill #{completedOrder.id}</h1>
+          <p className="text-lg font-semibold text-amber-300">Generated for: {completedOrder.customer_name}</p>
         </div>
 
         <div className="p-6 rounded-3xl bg-zinc-900/80 border border-zinc-800 space-y-4 text-sm max-w-md mx-auto shadow-xl">
@@ -162,7 +164,7 @@ export default function CheckoutPage() {
           </div>
 
           <div className="flex items-center justify-between text-xs text-zinc-400">
-            <span>Payment Verified</span>
+            <span>Bill Amount Paid</span>
             <span className="px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-400 font-bold border border-emerald-500/20">
               Paid (₹{completedOrder.total})
             </span>
@@ -170,24 +172,24 @@ export default function CheckoutPage() {
 
           <button
             onClick={() => setIsInvoiceOpen(true)}
-            className="w-full py-3 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-amber-300 font-bold text-xs flex items-center justify-center gap-2 transition-colors border border-amber-500/30"
+            className="w-full py-3.5 rounded-2xl gold-gradient-bg text-zinc-950 font-bold text-xs flex items-center justify-center gap-2 transition-colors border border-amber-500/30"
           >
-            <FileText className="w-4 h-4 text-amber-400" /> View & Print Official Tax Invoice Bill
+            <FileText className="w-4 h-4 text-zinc-950" /> View & Print Official Bill Receipt
           </button>
         </div>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
           <Link
             href="/orders"
-            className="w-full sm:w-auto px-8 py-3.5 rounded-2xl gold-gradient-bg text-zinc-950 font-bold text-sm"
+            className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-200 font-bold text-sm hover:bg-zinc-800"
           >
-            Track Order Live
+            View Database Order History
           </Link>
           <Link
             href="/menu"
-            className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-300 font-semibold text-sm hover:bg-zinc-800"
+            className="w-full sm:w-auto px-8 py-3.5 rounded-2xl gold-gradient-bg text-zinc-950 font-bold text-sm"
           >
-            Order More Items
+            New Order Bill
           </Link>
         </div>
 
@@ -203,75 +205,68 @@ export default function CheckoutPage() {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 space-y-10">
       <div>
-        <h1 className="text-3xl font-extrabold text-white">Checkout</h1>
-        <p className="text-xs text-zinc-400 mt-1">Review items and confirm your details</p>
+        <h1 className="text-3xl font-extrabold text-white">Generate Bill</h1>
+        <p className="text-xs text-zinc-400 mt-1">Enter customer name to generate & save bill in Supabase database</p>
       </div>
 
       <form onSubmit={handlePlaceOrder} className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-        {/* Customer Details Form */}
+        {/* Customer Name Form */}
         <div className="lg:col-span-2 space-y-8">
           <div className="p-8 rounded-3xl bg-zinc-900/80 border border-zinc-800 space-y-6 shadow-xl">
             <h3 className="text-xl font-bold text-white flex items-center gap-2">
-              <ShieldCheck className="w-5 h-5 text-amber-400" /> Contact & Delivery Details
+              <User className="w-5 h-5 text-amber-400" /> Customer Information
             </h3>
+
+            <div>
+              <label className="block text-xs font-semibold text-zinc-300 mb-1">Customer Name (Required) *</label>
+              <input
+                type="text"
+                required
+                placeholder="Enter Customer Full Name (e.g. Rahul Sharma)"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3.5 text-sm text-white focus:outline-none focus:border-amber-500 font-semibold"
+              />
+            </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-zinc-300 mb-1">Full Name *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Rahul Sharma"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-amber-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-zinc-300 mb-1">Phone Number *</label>
+                <label className="block text-xs font-semibold text-zinc-300 mb-1">Phone Number (Optional)</label>
                 <input
                   type="tel"
-                  required
                   placeholder="+91 98765 43210"
                   value={customerPhone}
                   onChange={(e) => setCustomerPhone(e.target.value)}
                   className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-amber-500"
                 />
               </div>
-            </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-zinc-300 mb-1">
-                Order Notes / Special Instructions
-              </label>
-              <textarea
-                rows={3}
-                placeholder="e.g. Extra hot cappuccino, oat milk preference, table number..."
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-amber-500"
-              />
+              <div>
+                <label className="block text-xs font-semibold text-zinc-300 mb-1">Order Notes (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Extra hot cappuccino, Table 4..."
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
             </div>
           </div>
 
           <div className="p-8 rounded-3xl bg-zinc-900/80 border border-zinc-800 space-y-4 shadow-xl">
             <h3 className="text-xl font-bold text-white flex items-center gap-2">
-              <CreditCard className="w-5 h-5 text-amber-400" /> Payment & Official Bill Generation
+              <CreditCard className="w-5 h-5 text-amber-400" /> Database History Storage
             </h3>
             <p className="text-xs text-zinc-400">
-              Upon confirmation, the order is registered in Supabase PostgreSQL and an official printable Tax Invoice Bill is generated.
+              When you click "Generate & Save Bill", the order items, customer name, date, and invoice receipt will be saved permanently in your Supabase database.
             </p>
-            <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-3 text-xs text-amber-200">
-              <Lock className="w-4 h-4 text-amber-400 shrink-0" />
-              <span>Encrypted test transaction ready for 1-click confirmation.</span>
-            </div>
           </div>
         </div>
 
         {/* Right Summary */}
         <div className="p-8 rounded-3xl bg-zinc-900/90 border border-amber-900/40 space-y-6 shadow-2xl h-fit">
-          <h3 className="text-xl font-bold text-white border-b border-zinc-800 pb-4">Your Basket</h3>
+          <h3 className="text-xl font-bold text-white border-b border-zinc-800 pb-4">Bill Summary</h3>
 
           <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
             {items.map((item) => {
@@ -305,7 +300,7 @@ export default function CheckoutPage() {
               </div>
             )}
             <div className="flex justify-between text-base font-bold text-white pt-2 border-t border-zinc-800">
-              <span>Total Payable</span>
+              <span>Total Bill Amount</span>
               <span className="gold-gradient-text text-lg">₹{total}</span>
             </div>
           </div>
@@ -315,7 +310,7 @@ export default function CheckoutPage() {
             disabled={isProcessing}
             className="w-full py-4 rounded-2xl gold-gradient-bg text-zinc-950 font-bold text-sm hover:brightness-110 shadow-xl shadow-amber-500/20 flex items-center justify-center gap-2"
           >
-            {isProcessing ? 'Generating Bill & Saving Order...' : 'Confirm & Generate Bill'}
+            {isProcessing ? 'Saving to Database...' : 'Generate & Save Bill'}
           </button>
         </div>
       </form>
