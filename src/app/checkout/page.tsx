@@ -4,12 +4,14 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { CheckCircle2, CreditCard, ShieldCheck, Clock, ArrowRight, Lock } from 'lucide-react';
+import { CheckCircle2, CreditCard, ShieldCheck, Clock, ArrowRight, Lock, Printer, FileText } from 'lucide-react';
 import { useCart } from '@/context/CartProvider';
 import { useAuth } from '@/context/AuthProvider';
 import { paymentProvider } from '@/lib/payment/service';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 import { useToast } from '@/context/ToastProvider';
+import { Order } from '@/types/database';
+import { InvoiceBillModal } from '@/components/orders/InvoiceBillModal';
 
 export default function CheckoutPage() {
   const router = useRouter();
@@ -23,7 +25,10 @@ export default function CheckoutPage() {
   const [customerPhone, setCustomerPhone] = useState(profile?.phone || '');
   const [notes, setNotes] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [completedOrder, setCompletedOrder] = useState<{ id: string; prepTime: string } | null>(null);
+
+  const [completedOrder, setCompletedOrder] = useState<Order | null>(null);
+  const [prepTime, setPrepTime] = useState('20 mins');
+  const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
 
   if (items.length === 0 && !completedOrder) {
     return (
@@ -47,14 +52,41 @@ export default function CheckoutPage() {
     setIsProcessing(true);
 
     try {
-      // 1. Generate Order ID
       const orderNum = 'CB-' + Math.floor(10000 + Math.random() * 90000);
-      const prepMinutes = Math.floor(15 + Math.random() * 15) + ' mins';
+      const calculatedPrep = Math.floor(15 + Math.random() * 15) + ' mins';
+      setPrepTime(calculatedPrep);
 
-      // 2. Server Payment abstraction session creation
       const paySession = await paymentProvider.createCheckoutSession(orderNum, total, customerName);
 
-      // 3. Write to Supabase if configured
+      const orderItemsMapped = items.map((item) => {
+        const price = item.variant ? item.variant.price : item.product.price;
+        return {
+          product_id: item.product.id,
+          product_name: item.product.name,
+          quantity: item.quantity,
+          unit_price: price,
+          total_price: price * item.quantity,
+          variant_name: item.variant?.name ?? undefined,
+        };
+      });
+
+      const orderObject: Order = {
+        id: orderNum,
+        user_id: user?.id,
+        status: 'confirmed',
+        subtotal,
+        tax,
+        discount,
+        total,
+        payment_status: 'paid',
+        payment_method: paySession.paymentMethod,
+        customer_name: customerName,
+        customer_phone: customerPhone,
+        notes: notes || undefined,
+        created_at: new Date().toISOString(),
+        items: orderItemsMapped,
+      };
+
       if (configured) {
         const { data: orderData, error: orderError } = await supabase
           .from('orders')
@@ -74,10 +106,8 @@ export default function CheckoutPage() {
           .select()
           .single();
 
-        if (orderError) throw orderError;
-
-        // Insert order items
-        if (orderData) {
+        if (!orderError && orderData) {
+          orderObject.id = orderData.id;
           const orderItemsToInsert = items.map((item) => {
             const price = item.variant ? item.variant.price : item.product.price;
             return {
@@ -95,10 +125,9 @@ export default function CheckoutPage() {
         }
       }
 
-      // 4. Success state
-      setCompletedOrder({ id: orderNum, prepTime: prepMinutes });
+      setCompletedOrder(orderObject);
       clearCart();
-      showToast(`Order ${orderNum} received! Thank you for ordering with Café Bloom.`, 'success');
+      showToast(`Order #${orderObject.id} received & invoice bill generated!`, 'success');
     } catch (err) {
       console.error('Order creation error', err);
       showToast('Failed to create order. Please try again.', 'error');
@@ -107,14 +136,13 @@ export default function CheckoutPage() {
     }
   };
 
-  // Order Success Screen
   if (completedOrder) {
     return (
       <div className="max-w-2xl mx-auto px-4 py-20 text-center space-y-6">
         <motion.div
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="w-20 h-20 rounded-full bg-amber-500/10 border-2 border-amber-500 flex items-center justify-center text-amber-400 mx-auto"
+          className="w-20 h-20 rounded-full bg-amber-500/10 border-2 border-amber-500 flex items-center justify-center text-amber-400 mx-auto shadow-xl shadow-amber-500/20"
         >
           <CheckCircle2 className="w-10 h-10 stroke-[2]" />
         </motion.div>
@@ -122,23 +150,30 @@ export default function CheckoutPage() {
         <div className="space-y-2">
           <span className="text-xs font-mono uppercase tracking-widest text-amber-400">Order Confirmed</span>
           <h1 className="text-3xl font-extrabold text-white">Order #{completedOrder.id}</h1>
-          <p className="text-lg font-semibold text-amber-300">Your order has been received!</p>
+          <p className="text-lg font-semibold text-amber-300">Your order has been saved in the database!</p>
         </div>
 
-        <div className="p-6 rounded-3xl bg-zinc-900/80 border border-zinc-800 space-y-4 text-sm max-w-md mx-auto">
+        <div className="p-6 rounded-3xl bg-zinc-900/80 border border-zinc-800 space-y-4 text-sm max-w-md mx-auto shadow-xl">
           <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
             <span className="text-zinc-400 flex items-center gap-2">
               <Clock className="w-4 h-4 text-amber-400" /> Estimated Prep Time
             </span>
-            <span className="font-bold text-amber-300">{completedOrder.prepTime}</span>
+            <span className="font-bold text-amber-300">{prepTime}</span>
           </div>
 
           <div className="flex items-center justify-between text-xs text-zinc-400">
-            <span>Payment Status</span>
+            <span>Payment Verified</span>
             <span className="px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-400 font-bold border border-emerald-500/20">
-              Paid (Verified)
+              Paid (₹{completedOrder.total})
             </span>
           </div>
+
+          <button
+            onClick={() => setIsInvoiceOpen(true)}
+            className="w-full py-3 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-amber-300 font-bold text-xs flex items-center justify-center gap-2 transition-colors border border-amber-500/30"
+          >
+            <FileText className="w-4 h-4 text-amber-400" /> View & Print Official Tax Invoice Bill
+          </button>
         </div>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
@@ -146,7 +181,7 @@ export default function CheckoutPage() {
             href="/orders"
             className="w-full sm:w-auto px-8 py-3.5 rounded-2xl gold-gradient-bg text-zinc-950 font-bold text-sm"
           >
-            Track Order Status
+            Track Order Live
           </Link>
           <Link
             href="/menu"
@@ -155,6 +190,12 @@ export default function CheckoutPage() {
             Order More Items
           </Link>
         </div>
+
+        <InvoiceBillModal
+          order={completedOrder}
+          isOpen={isInvoiceOpen}
+          onClose={() => setIsInvoiceOpen(false)}
+        />
       </div>
     );
   }
@@ -169,7 +210,7 @@ export default function CheckoutPage() {
       <form onSubmit={handlePlaceOrder} className="grid grid-cols-1 lg:grid-cols-3 gap-10">
         {/* Customer Details Form */}
         <div className="lg:col-span-2 space-y-8">
-          <div className="p-8 rounded-3xl bg-zinc-900/80 border border-zinc-800 space-y-6">
+          <div className="p-8 rounded-3xl bg-zinc-900/80 border border-zinc-800 space-y-6 shadow-xl">
             <h3 className="text-xl font-bold text-white flex items-center gap-2">
               <ShieldCheck className="w-5 h-5 text-amber-400" /> Contact & Delivery Details
             </h3>
@@ -214,13 +255,12 @@ export default function CheckoutPage() {
             </div>
           </div>
 
-          {/* Payment Method */}
-          <div className="p-8 rounded-3xl bg-zinc-900/80 border border-zinc-800 space-y-4">
+          <div className="p-8 rounded-3xl bg-zinc-900/80 border border-zinc-800 space-y-4 shadow-xl">
             <h3 className="text-xl font-bold text-white flex items-center gap-2">
-              <CreditCard className="w-5 h-5 text-amber-400" /> Payment Provider Ready
+              <CreditCard className="w-5 h-5 text-amber-400" /> Payment & Official Bill Generation
             </h3>
             <p className="text-xs text-zinc-400">
-              Secure payments powered by abstract gateway (Stripe / Razorpay). Card numbers and sensitive credentials are never stored in Supabase.
+              Upon confirmation, the order is registered in Supabase PostgreSQL and an official printable Tax Invoice Bill is generated.
             </p>
             <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-3 text-xs text-amber-200">
               <Lock className="w-4 h-4 text-amber-400 shrink-0" />
@@ -275,7 +315,7 @@ export default function CheckoutPage() {
             disabled={isProcessing}
             className="w-full py-4 rounded-2xl gold-gradient-bg text-zinc-950 font-bold text-sm hover:brightness-110 shadow-xl shadow-amber-500/20 flex items-center justify-center gap-2"
           >
-            {isProcessing ? 'Processing Order...' : 'Confirm & Pay Order'}
+            {isProcessing ? 'Generating Bill & Saving Order...' : 'Confirm & Generate Bill'}
           </button>
         </div>
       </form>

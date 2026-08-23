@@ -1,13 +1,15 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ShoppingBag, ChevronDown } from 'lucide-react';
+import { ShoppingBag, ChevronDown, FileText } from 'lucide-react';
 import { MOCK_INITIAL_ORDERS } from '@/lib/mockData';
 import { Order, OrderStatus } from '@/types/database';
 import { useToast } from '@/context/ToastProvider';
+import { InvoiceBillModal } from '@/components/orders/InvoiceBillModal';
 
 export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<Order[]>(MOCK_INITIAL_ORDERS);
+  const [selectedInvoiceOrder, setSelectedInvoiceOrder] = useState<Order | null>(null);
   const { showToast } = useToast();
 
   const handleStatusChange = (id: string, newStatus: OrderStatus) => {
@@ -20,9 +22,9 @@ export default function AdminOrdersPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-extrabold text-white">Live Order Management</h1>
+        <h1 className="text-3xl font-extrabold text-white">Live Order Management & Invoices</h1>
         <p className="text-xs text-zinc-400 mt-1">
-          Monitor incoming customer orders and update kitchen preparation stages in real-time
+          Monitor customer database orders, generate tax bills, and update preparation status
         </p>
       </div>
 
@@ -36,6 +38,7 @@ export default function AdminOrdersPage() {
                 <th className="py-3 px-4">Total Price</th>
                 <th className="py-3 px-4">Payment</th>
                 <th className="py-3 px-4">Live Status</th>
+                <th className="py-3 px-4">Invoice Bill</th>
                 <th className="py-3 px-4 text-right">Update Status</th>
               </tr>
             </thead>
@@ -53,6 +56,14 @@ export default function AdminOrdersPage() {
                     <span className="px-3 py-1 rounded-full bg-amber-500/10 text-amber-300 font-bold border border-amber-500/30 capitalize">
                       {order.status}
                     </span>
+                  </td>
+                  <td className="py-4 px-4">
+                    <button
+                      onClick={() => setSelectedInvoiceOrder(order)}
+                      className="px-3 py-1.5 rounded-xl bg-zinc-950 border border-zinc-800 text-amber-400 hover:text-amber-300 text-xs font-semibold flex items-center gap-1.5"
+                    >
+                      <FileText className="w-3.5 h-3.5" /> View Bill
+                    </button>
                   </td>
                   <td className="py-4 px-4 text-right">
                     <select
@@ -74,6 +85,12 @@ export default function AdminOrdersPage() {
           </table>
         </div>
       </div>
+
+      <InvoiceBillModal
+        order={selectedInvoiceOrder}
+        isOpen={Boolean(selectedInvoiceOrder)}
+        onClose={() => setSelectedInvoiceOrder(null)}
+      />
     </div>
   );
 }

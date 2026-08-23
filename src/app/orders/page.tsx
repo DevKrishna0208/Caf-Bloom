@@ -2,13 +2,15 @@
 
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ShoppingBag, Clock, CheckCircle2, AlertCircle, ChefHat, Package, Check, ChevronRight } from 'lucide-react';
+import { ShoppingBag, Clock, CheckCircle2, AlertCircle, ChefHat, Package, Check, Printer, FileText } from 'lucide-react';
 import { MOCK_INITIAL_ORDERS } from '@/lib/mockData';
 import { Order, OrderStatus } from '@/types/database';
+import { InvoiceBillModal } from '@/components/orders/InvoiceBillModal';
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>(MOCK_INITIAL_ORDERS);
   const [selectedOrder, setSelectedOrder] = useState<Order>(MOCK_INITIAL_ORDERS[0]);
+  const [isInvoiceOpen, setIsInvoiceOpen] = useState<boolean>(false);
 
   const statusSteps: { key: OrderStatus; label: string; icon: React.ReactNode }[] = [
     { key: 'pending', label: 'Order Placed', icon: '☕' },
@@ -26,8 +28,8 @@ export default function OrdersPage() {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 space-y-10">
       <div>
-        <h1 className="text-3xl font-extrabold text-white">Your Orders & Live Tracking</h1>
-        <p className="text-xs text-zinc-400 mt-1">Track your café order status in real time</p>
+        <h1 className="text-3xl font-extrabold text-white">Your Orders & Live Bills</h1>
+        <p className="text-xs text-zinc-400 mt-1">Track your café preparation progress & view official tax invoices</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
@@ -53,7 +55,7 @@ export default function OrdersPage() {
               </div>
 
               <p className="text-xs text-zinc-400 mt-2">
-                {new Date(order.created_at).toLocaleDateString('en-US', {
+                {new Date(order.created_at).toLocaleDateString('en-IN', {
                   month: 'short',
                   day: 'numeric',
                   hour: '2-digit',
@@ -69,7 +71,7 @@ export default function OrdersPage() {
           ))}
         </div>
 
-        {/* Right: Detailed Live Tracking Card */}
+        {/* Right: Detailed Live Tracking & Invoice Option */}
         <div className="lg:col-span-2 space-y-8">
           <div className="p-8 rounded-3xl bg-zinc-900/90 border border-amber-900/40 space-y-8 shadow-2xl">
             {/* Header Details */}
@@ -82,10 +84,14 @@ export default function OrdersPage() {
                 </p>
               </div>
 
-              <div className="text-left sm:text-right">
-                <span className="text-xs text-zinc-500 block">Payment Method</span>
-                <span className="text-sm font-semibold text-zinc-200">{selectedOrder.payment_method}</span>
-                <span className="block text-xs text-emerald-400 font-bold mt-0.5 uppercase tracking-wider">
+              <div className="flex flex-col items-start sm:items-end gap-2">
+                <button
+                  onClick={() => setIsInvoiceOpen(true)}
+                  className="px-4 py-2 rounded-xl gold-gradient-bg text-zinc-950 font-bold text-xs hover:brightness-110 flex items-center gap-1.5 shadow-md shadow-amber-500/20"
+                >
+                  <FileText className="w-4 h-4" /> View / Print Tax Invoice Bill
+                </button>
+                <span className="text-[11px] text-emerald-400 font-bold uppercase tracking-wider">
                   Payment Status: {selectedOrder.payment_status}
                 </span>
               </div>
@@ -127,7 +133,7 @@ export default function OrdersPage() {
 
             {/* Items Summary Table */}
             <div className="space-y-3 pt-4 border-t border-zinc-800">
-              <h4 className="text-sm font-bold text-white">Order Items</h4>
+              <h4 className="text-sm font-bold text-white">Order Items Breakdown</h4>
               <div className="space-y-2">
                 {selectedOrder.items?.map((item, idx) => (
                   <div key={idx} className="flex items-center justify-between p-3 rounded-2xl bg-zinc-950 border border-zinc-800 text-xs">
@@ -144,6 +150,12 @@ export default function OrdersPage() {
           </div>
         </div>
       </div>
+
+      <InvoiceBillModal
+        order={selectedOrder}
+        isOpen={isInvoiceOpen}
+        onClose={() => setIsInvoiceOpen(false)}
+      />
     </div>
   );
 }
